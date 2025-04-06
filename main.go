@@ -28,6 +28,12 @@ type Parser struct {
 	tokens []Token
 }
 
+type State struct {
+	start bool
+	end bool
+	transitions map[uint8][]*State
+}
+
 func exitWithMsg(msg string) {
 	fmt.Fprintln(os.Stderr, msg)
 	os.Exit(1)
@@ -103,11 +109,11 @@ func parseOr(rgx string, parser *Parser) {
 		tokenType: bundle,
 		value: rhsParser.tokens,
 	}
-	parser.i = rhsParser.i 
 	parser.tokens = []Token{{ 
 		tokenType: or,
 		value: []Token{left, right},
 	}}
+	parser.i = rhsParser.i 
 }
 
 const INF = -1
@@ -248,7 +254,83 @@ func parse(rgx string) []Token {
 	return parser.tokens
 }
 
+func tokenToNFA(token *Token) (*State, *State) {
+	start := &State{
+		transitions: map[uint8][]*State{},
+	}
+	end := &State{
+		transitions: map[uint8][]*State{},
+	}
+
+	switch token.tokenType {
+	case literal:
+		start.transitions[token.value.(uint8)] = []*State{end}
+	default:
+		exitWithMsg("Error: unknown token type")
+	}
+
+	return start, end
+}
+
+const epsilonValue uint8 = 0 // empty
+
+func toNFA(tokens []Token) *State {
+	startState, endState := tokenToNFA(&tokens[0])
+	for i := 1; i < len(tokens); i++ {
+		nextStart, nextEnd := tokenToNFA(&tokens[i])
+		endState.transitions[epsilonValue] = append (
+			endState.transitions[epsilonValue],
+			nextStart,
+		)
+		endState = nextEnd
+	}
+
+	start := &State{
+		start: true,
+		transitions: map[uint8][]*State{
+			epsilonValue: {startState},
+		},
+	}
+	end := &State{
+		end: true,
+		transitions: map[uint8][]*State{},
+	}
+
+	endState.transitions[epsilonValue] = append (
+		endState.transitions[epsilonValue],
+		end,
+	)
+
+	return start
+}
+
+func match(state *State, input string, i int) bool {
+	var c uint8
+	if i == len(input) && state.end {
+		return true
+	} else if i != len(input) {
+		c = input[i]
+	} else {
+		c = 1 
+	}
+
+	for _, nextState := range state.transitions[c] {
+		if match(nextState, input, i + 1) {
+			return true
+		}
+	}
+
+	for _, nextEpsilonState := range state.transitions[epsilonValue] {
+		if match(nextEpsilonState, input, i) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func main() {
 	tokens := parse(os.Args[1])
-	fmt.Println(tokens)
+	startState := toNFA(tokens)
+    fmt.Println(match(startState, os.Args[2], 0))
 }
