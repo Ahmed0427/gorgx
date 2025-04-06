@@ -118,7 +118,13 @@ func parseOr(rgx string, parser *Parser) {
 	parser.i = rhsParser.i 
 }
 
-const INF = -1
+const INF = 2147483647
+
+type RepeatData struct {
+	token Token
+	min int
+	max int
+}
 
 func parseRepeat(rgx string, parser *Parser) {
 	c := rgx[parser.i]
@@ -139,11 +145,7 @@ func parseRepeat(rgx string, parser *Parser) {
 	lastToken := parser.tokens[len(parser.tokens) - 1]
 	parser.tokens[len(parser.tokens) - 1] = Token {
 		tokenType: repeat,
-		value: struct {
-			token Token
-			min int
-			max int
-		}{ 
+		value: RepeatData{ 
 			token: lastToken,
 			min:   mn,
 			max:   mx,
@@ -176,16 +178,26 @@ func parseCustomRepeat(rgx string, parser *Parser) {
 		mx = val
 		mn = val
 	} else if len(leftRight) == 2 {
+		leftVal := 0
 		rightVal := INF
-		leftVal, err := strconv.Atoi(leftRight[0])
-		if err != nil {
-			exitWithMsg(err.Error())
+		var err error = nil
+		if leftRight[0] != "" {
+			leftVal, err = strconv.Atoi(leftRight[0])
+			if err != nil {
+				exitWithMsg(err.Error())
+			}
 		}
 		if leftRight[1] != "" {
 			rightVal, err = strconv.Atoi(leftRight[1])
 			if err != nil {
 				exitWithMsg(err.Error())
 			}
+		}
+		if rightVal < leftVal {
+			exitWithMsg("Error: custom repeat must has max >= min")
+		}
+		if rightVal <= 0 {
+			exitWithMsg("Error: custom repeat must has max > 0")
 		}
 		mn = leftVal
 		mx = rightVal
@@ -199,11 +211,7 @@ func parseCustomRepeat(rgx string, parser *Parser) {
 	lastToken := parser.tokens[len(parser.tokens) - 1]
 	parser.tokens[len(parser.tokens) - 1] = Token {
 		tokenType: repeat,
-		value: struct {
-			token Token
-			min int
-			max int
-		}{ 
+		value: RepeatData{ 
 			token: lastToken,
 			min:   mn,
 			max:   mx,
@@ -294,6 +302,57 @@ func tokenToNFA(token *Token) (*State, *State) {
 			end = nextEnd
 		}
 
+	case repeat:
+		tok := token.value.(RepeatData).token
+		mn := token.value.(RepeatData).min
+		mx := token.value.(RepeatData).max
+		
+		if mn == 0 {
+			start.transitions[epsilonValue] = []*State{end}
+		}
+
+		concatCount := 1
+		if mx != INF {
+			concatCount = mx
+		} else if mn != 0 {
+			concatCount = mn
+		}
+		
+		s, e := tokenToNFA(&tok)
+		start.transitions[epsilonValue] = append (
+			start.transitions[epsilonValue],
+			s,
+		)
+		for i := 2; i <= concatCount; i++ {
+			nextStart, nextEnd := tokenToNFA(&tok)
+			e.transitions[epsilonValue] = append (
+				e.transitions[epsilonValue],
+				nextStart,
+			)
+			s = nextStart
+			e = nextEnd
+
+			if i > mn {
+				s.transitions[epsilonValue] = append (
+					s.transitions[epsilonValue],
+					end,
+				)
+			}
+		}
+
+		e.transitions[epsilonValue] = append (
+			e.transitions[epsilonValue],
+			end,
+		)
+
+		if mx == INF {
+			end.transitions[epsilonValue] = append (
+				end.transitions[epsilonValue],
+				s,
+			)
+		}
+		
+
 	default:
 		exitWithMsg("Error: unknown token type")
 	}
@@ -333,14 +392,16 @@ func toNFA(tokens []Token) *State {
 	return start
 }
 
+const stringEnd = 1
+
 func match(state *State, input string, i int) bool {
 	var c uint8
 	if i == len(input) && state.end {
 		return true
-	} else if i != len(input) {
-		c = input[i]
+	} else if i == len(input) {
+		c = stringEnd
 	} else {
-		c = 1 
+		c = input[i]
 	}
 
 	for _, nextState := range state.transitions[c] {
@@ -349,8 +410,8 @@ func match(state *State, input string, i int) bool {
 		}
 	}
 
-	for _, nextEpsilonState := range state.transitions[epsilonValue] {
-		if match(nextEpsilonState, input, i) {
+	for _, epsilonState := range state.transitions[epsilonValue] {
+		if match(epsilonState, input, i) {
 			return true
 		}
 	}
