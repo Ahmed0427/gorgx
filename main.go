@@ -43,6 +43,9 @@ func parseGroup(rgx string, parser *Parser) {
 	parser.i++
 	for parser.i != len(rgx) && rgx[parser.i] != ')' {
 		process(rgx, parser)
+		if rgx[parser.i] == ')' {
+			break
+		}
 		parser.i++
 	}
 	if parser.i == len(rgx) {
@@ -264,6 +267,7 @@ func tokenToNFA(token *Token) (*State, *State) {
 	switch token.tokenType {
 	case literal:
 		start.transitions[token.value.(uint8)] = []*State{end}
+
 	case or:
 		token1 := token.value.([]Token)[0] 
 		token2 := token.value.([]Token)[1] 
@@ -272,11 +276,24 @@ func tokenToNFA(token *Token) (*State, *State) {
 		start.transitions[epsilonValue] = []*State{start1, start2}
 		end1.transitions[epsilonValue] = []*State{end}
 		end2.transitions[epsilonValue] = []*State{end}
+
 	case bracket:
 		for ch := range token.value.(map[uint8]bool) {
 			start.transitions[ch] = []*State{end}
 		}
-		
+
+	case group, bundle:
+		tokens := token.value.([]Token)
+		start, end = tokenToNFA(&tokens[0])
+		for i := 1; i < len(tokens); i++ {
+			nextStart, nextEnd := tokenToNFA(&tokens[i])
+			end.transitions[epsilonValue] = append (
+				end.transitions[epsilonValue],
+				nextStart,
+			)
+			end = nextEnd
+		}
+
 	default:
 		exitWithMsg("Error: unknown token type")
 	}
