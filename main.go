@@ -75,7 +75,6 @@ func parseBracket(rgx string, parser *Parser) {
 		exitWithMsg("Error: there is no ']' to end bracket")
 	}
 	literalsSet := make(map[uint8]bool)
-	fmt.Println(literals)
 	for _, lit := range literals {
 		if lit[0] > lit[len(lit) - 1] {
 			exitWithMsg("Error: range start must be less that range end")
@@ -265,6 +264,19 @@ func tokenToNFA(token *Token) (*State, *State) {
 	switch token.tokenType {
 	case literal:
 		start.transitions[token.value.(uint8)] = []*State{end}
+	case or:
+		token1 := token.value.([]Token)[0] 
+		token2 := token.value.([]Token)[1] 
+		start1, end1 := tokenToNFA(&token1)
+		start2, end2 := tokenToNFA(&token2)
+		start.transitions[epsilonValue] = []*State{start1, start2}
+		end1.transitions[epsilonValue] = []*State{end}
+		end2.transitions[epsilonValue] = []*State{end}
+	case bracket:
+		for ch := range token.value.(map[uint8]bool) {
+			start.transitions[ch] = []*State{end}
+		}
+		
 	default:
 		exitWithMsg("Error: unknown token type")
 	}
