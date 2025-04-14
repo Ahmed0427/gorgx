@@ -17,6 +17,10 @@ const (
 	OR       TokenType = iota
 )
 
+const EPSILON uint8 = 0 
+const INFINITY int = 2147483647
+const STRING_END = 1
+
 type Token struct{
 	tokenType TokenType
 	value interface{}
@@ -30,7 +34,17 @@ type Parser struct {
 type State struct {
 	start bool
 	end bool
-	transitions map[uint8][]*State
+	transitions []Transition
+}
+type Transition struct {
+	symbol uint8
+	states []*State
+}
+
+type RepeatData struct {
+	token Token
+	min int
+	max int
 }
 
 func exit(msg string) {
@@ -58,12 +72,12 @@ func parseCharSet(rgx string, parser *Parser) {
 	for parser.i != len(rgx) && rgx[parser.i] != ']' {
 		c := rgx[parser.i]
 		if c == '-' {
-			if parser.i + 1 != len(rgx) && rgx[parser.i + 1] == ']' {
+			if (parser.i + 1 != len(rgx) && rgx[parser.i + 1] == ']') || len(literals) == 0 {
 				literals = append(literals, fmt.Sprintf("%c", c))
 				parser.i++
 				continue
 			}
-			if len(literals) == 0 || len(literals[len(literals) - 1]) != 1 {
+			if len(literals[len(literals) - 1]) != 1 {
 				exit("Error: a range must has a start")
 			}
 			nextChar := rgx[parser.i + 1]
@@ -119,22 +133,14 @@ func parseOr(rgx string, parser *Parser) {
 	parser.i = rhsParser.i 
 }
 
-const INF = 2147483647
-
-type RepeatData struct {
-	token Token
-	min int
-	max int
-}
-
 func parseRepeat(rgx string, parser *Parser) {
 	c := rgx[parser.i]
 	var mx, mn int
 	if c == '*' {
-		mx = INF
+		mx = INFINITY
 		mn = 0
 	} else if c == '+' {
-		mx = INF
+		mx = INFINITY
 		mn = 1 
 	} else {
 		mx = 1
@@ -180,7 +186,7 @@ func parseCustomRepeat(rgx string, parser *Parser) {
 		mn = val
 	} else if len(leftRight) == 2 {
 		leftVal := 0
-		rightVal := INF
+		rightVal := INFINITY
 		var err error = nil
 		if leftRight[0] != "" {
 			leftVal, err = strconv.Atoi(leftRight[0])
@@ -265,30 +271,43 @@ func parse(rgx string) []Token {
 	return parser.tokens
 }
 
+func addTransition(a, b *State, symbol uint8) {
+	for i := range a.transitions {
+		if a.transitions[i].symbol != symbol { continue }
+		a.transitions[i].states = append(a.transitions[i].states, b)
+		return
+	}
+
+	a.transitions = append(a.transitions,
+		Transition{ symbol: symbol, states: []*State{b}},
+	)
+}
+
 func tokenToNFA(token *Token) (*State, *State) {
 	start := &State{
-		transitions: map[uint8][]*State{},
+		transitions: []Transition{},
 	}
 	end := &State{
-		transitions: map[uint8][]*State{},
+		transitions: []Transition{},
 	}
 
 	switch token.tokenType {
 	case LITERAL:
-		start.transitions[token.value.(uint8)] = []*State{end}
+		addTransition(start, end, token.value.(uint8))
 
 	case OR:
 		token1 := token.value.([]Token)[0] 
 		token2 := token.value.([]Token)[1] 
 		start1, end1 := tokenToNFA(&token1)
 		start2, end2 := tokenToNFA(&token2)
-		start.transitions[epsilonValue] = []*State{start1, start2}
-		end1.transitions[epsilonValue] = []*State{end}
-		end2.transitions[epsilonValue] = []*State{end}
+		addTransition(start, start1, EPSILON)
+		addTransition(start, start2, EPSILON)
+		addTransition(end1, end, EPSILON)
+		addTransition(end2, end, EPSILON)
 
 	case CHAR_SET:
-		for ch := range token.value.(map[uint8]bool) {
-			start.transitions[ch] = []*State{end}
+		for symbol := range token.value.(map[uint8]bool) {
+			addTransition(start, end, symbol)
 		}
 
 	case GROUP:
@@ -296,10 +315,7 @@ func tokenToNFA(token *Token) (*State, *State) {
 		start, end = tokenToNFA(&tokens[0])
 		for i := 1; i < len(tokens); i++ {
 			nextStart, nextEnd := tokenToNFA(&tokens[i])
-			end.transitions[epsilonValue] = append (
-				end.transitions[epsilonValue],
-				nextStart,
-			)
+			addTransition(end, nextStart, EPSILON)
 			end = nextEnd
 		}
 
@@ -309,48 +325,34 @@ func tokenToNFA(token *Token) (*State, *State) {
 		mx := token.value.(RepeatData).max
 		
 		if mn == 0 {
-			start.transitions[epsilonValue] = []*State{end}
+			addTransition(start, end, EPSILON)
 		}
 
 		concatCount := 1
-		if mx != INF {
+		if mx != INFINITY {
 			concatCount = mx
 		} else if mn != 0 {
 			concatCount = mn
 		}
 		
 		s, e := tokenToNFA(&tok)
-		start.transitions[epsilonValue] = append (
-			start.transitions[epsilonValue],
-			s,
-		)
+		addTransition(start, s, EPSILON)
+
 		for i := 2; i <= concatCount; i++ {
 			nextStart, nextEnd := tokenToNFA(&tok)
-			e.transitions[epsilonValue] = append (
-				e.transitions[epsilonValue],
-				nextStart,
-			)
+			addTransition(e, nextStart, EPSILON)
 			s = nextStart
 			e = nextEnd
 
 			if i > mn {
-				s.transitions[epsilonValue] = append (
-					s.transitions[epsilonValue],
-					end,
-				)
+				addTransition(s, end, EPSILON)
 			}
 		}
 
-		e.transitions[epsilonValue] = append (
-			e.transitions[epsilonValue],
-			end,
-		)
+		addTransition(e, end, EPSILON)
 
-		if mx == INF {
-			end.transitions[epsilonValue] = append (
-				end.transitions[epsilonValue],
-				s,
-			)
+		if mx == INFINITY {
+			addTransition(end, s, EPSILON)
 		}
 		
 
@@ -361,59 +363,62 @@ func tokenToNFA(token *Token) (*State, *State) {
 	return start, end
 }
 
-const epsilonValue uint8 = 0 // empty
-
 func toNFA(tokens []Token) *State {
 	startState, endState := tokenToNFA(&tokens[0])
 	for i := 1; i < len(tokens); i++ {
 		nextStart, nextEnd := tokenToNFA(&tokens[i])
-		endState.transitions[epsilonValue] = append (
-			endState.transitions[epsilonValue],
-			nextStart,
-		)
+		addTransition(endState, nextStart, EPSILON)
 		endState = nextEnd
 	}
 
 	start := &State{
 		start: true,
-		transitions: map[uint8][]*State{
-			epsilonValue: {startState},
-		},
 	}
+	addTransition(start, startState, EPSILON)
+
 	end := &State{
 		end: true,
-		transitions: map[uint8][]*State{},
 	}
-
-	endState.transitions[epsilonValue] = append (
-		endState.transitions[epsilonValue],
-		end,
-	)
+	addTransition(endState, end, EPSILON)
 
 	return start
 }
 
-const STRING_END = 1
-
 func match(state *State, input string, i int) bool {
-	var c uint8
-	if i == len(input) && state.end {
-		return true
-	} else if i == len(input) {
-		c = STRING_END
-	} else {
-		c = input[i]
-	}
-
-	for _, nextState := range state.transitions[c] {
-		if match(nextState, input, i + 1) {
+	if i == len(input) {
+		if state.end {
 			return true
 		}
-	}
 
-	for _, epsilonState := range state.transitions[epsilonValue] {
-		if match(epsilonState, input, i) {
-			return true
+		for _, transition := range state.transitions {
+			if transition.symbol != EPSILON {
+				continue
+			}
+			for _, epsilonState := range transition.states {
+				if match(epsilonState, input, i) {
+					return true
+				}
+			}
+		}
+
+		return false
+	}
+	var c uint8 = input[i]
+
+	for _, transition := range state.transitions {
+		switch transition.symbol {
+		case c:	
+			for _, nextState := range transition.states {
+				if match(nextState, input, i + 1) {
+					return true
+				}
+			}
+		case EPSILON:
+			for _, epsilonState := range transition.states {
+				if match(epsilonState, input, i) {
+					return true
+				}
+			}
 		}
 	}
 
