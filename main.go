@@ -56,13 +56,7 @@ func parseGroup(rgx string, parser *Parser) {
 	parser.i++
 	for parser.i != len(rgx) && rgx[parser.i] != ')' {
 		process(rgx, parser)
-		if rgx[parser.i] == ')' {
-			break
-		}
 		parser.i++
-	}
-	if parser.i == len(rgx) {
-		exit("Error: there is no ')' to end group")
 	}
 }
 
@@ -72,7 +66,9 @@ func parseCharSet(rgx string, parser *Parser) {
 	for parser.i != len(rgx) && rgx[parser.i] != ']' {
 		c := rgx[parser.i]
 		if c == '-' {
-			if (parser.i + 1 != len(rgx) && rgx[parser.i + 1] == ']') || len(literals) == 0 {
+			if (parser.i + 1 != len(rgx) && rgx[parser.i + 1] == ']') ||
+				len(literals) == 0 {
+
 				literals = append(literals, fmt.Sprintf("%c", c))
 				parser.i++
 				continue
