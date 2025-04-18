@@ -7,7 +7,7 @@ import (
 
 func validate(regex, input string) bool {
 	nfa := toNFA(parse(regex))
-	return match(nfa, input, 0)
+	return match(nfa, input)
 }
 
 func TestRegexEngine(t *testing.T) {
@@ -99,6 +99,11 @@ func TestRegexEngine(t *testing.T) {
 		{
 			regex: "(([a-z]{3})([0-9]{2})){5}",
 			input: "abc12def34ghi56jkl78",
+			expected: false,
+		},
+		{
+			regex: "a*a*a*a*a*a*a*a*a*a*",
+			input: "aaaaaaaaaaaaaaaaaaab",
 			expected: false,
 		},
 		{
