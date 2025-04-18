@@ -380,49 +380,72 @@ func toNFA(tokens []Token) *State {
 	return start
 }
 
-func match(state *State, input string, i int) bool {
-	if i == len(input) {
-		if state.end {
-			return true
+func match(state *State, input string) bool {
+	type CacheKey struct {
+		state *State
+		i int
+	}
+
+	cache := make(map[CacheKey]bool)
+
+	var matcher func(*State, string, int) bool
+
+	matcher = func(state *State, input string, i int) bool {
+		if result, ok := cache[CacheKey{state, i}]; ok {
+			return result
 		}
+
+		if i == len(input) {
+			if state.end {
+				cache[CacheKey{state, i}] = true
+				return true
+			}
+
+			for _, transition := range state.transitions {
+				if transition.symbol != EPSILON {
+					continue
+				}
+				for _, epsilonState := range transition.states {
+					if matcher(epsilonState, input, i) {
+						cache[CacheKey{state, i}] = true
+						return true
+					}
+				}
+			}
+
+			cache[CacheKey{state, i}] = false 
+			return false
+		}
+		var c uint8 = input[i]
 
 		for _, transition := range state.transitions {
-			if transition.symbol != EPSILON {
-				continue
-			}
-			for _, epsilonState := range transition.states {
-				if match(epsilonState, input, i) {
-					return true
+			switch transition.symbol {
+			case c:	
+				for _, nextState := range transition.states {
+					if matcher(nextState, input, i + 1) {
+						cache[CacheKey{state, i}] = true
+						return true
+					}
+				}
+			case EPSILON:
+				for _, epsilonState := range transition.states {
+					if matcher(epsilonState, input, i) {
+						cache[CacheKey{state, i}] = true
+						return true
+					}
 				}
 			}
 		}
 
+		cache[CacheKey{state, i}] = false 
 		return false
 	}
-	var c uint8 = input[i]
 
-	for _, transition := range state.transitions {
-		switch transition.symbol {
-		case c:	
-			for _, nextState := range transition.states {
-				if match(nextState, input, i + 1) {
-					return true
-				}
-			}
-		case EPSILON:
-			for _, epsilonState := range transition.states {
-				if match(epsilonState, input, i) {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
+	return matcher(state, input, 0)
 }
 
 func main() {
 	tokens := parse(os.Args[1])
 	startState := toNFA(tokens)
-    fmt.Println(match(startState, os.Args[2], 0))
+    fmt.Println(match(startState, os.Args[2]))
 }
