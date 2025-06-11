@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 )
 
 type TokenType uint8
@@ -17,23 +17,23 @@ const (
 	OR       TokenType = iota
 )
 
-const EPSILON uint8 = 0 
+const EPSILON uint8 = 0
 const INFINITY int = 2147483647
 const STRING_END = 1
 
-type Token struct{
+type Token struct {
 	tokenType TokenType
-	value interface{}
+	value     interface{}
 }
 
 type Parser struct {
-	i int // current index in the regex string
+	i      int // current index in the regex string
 	tokens []Token
 }
 
 type State struct {
-	start bool
-	end bool
+	start       bool
+	end         bool
 	transitions []Transition
 }
 type Transition struct {
@@ -43,8 +43,8 @@ type Transition struct {
 
 type RepeatData struct {
 	token Token
-	min int
-	max int
+	min   int
+	max   int
 }
 
 func exit(msg string) {
@@ -66,19 +66,19 @@ func parseCharSet(rgx string, parser *Parser) {
 	for parser.i != len(rgx) && rgx[parser.i] != ']' {
 		c := rgx[parser.i]
 		if c == '-' {
-			if (parser.i + 1 != len(rgx) && rgx[parser.i + 1] == ']') ||
+			if (parser.i+1 != len(rgx) && rgx[parser.i+1] == ']') ||
 				len(literals) == 0 {
 
 				literals = append(literals, fmt.Sprintf("%c", c))
 				parser.i++
 				continue
 			}
-			if len(literals[len(literals) - 1]) != 1 {
+			if len(literals[len(literals)-1]) != 1 {
 				exit("Error: a range must has a start")
 			}
-			nextChar := rgx[parser.i + 1]
-			prevChar := literals[len(literals) - 1][0]
-			literals[len(literals) - 1] = fmt.Sprintf("%c%c", prevChar, nextChar)
+			nextChar := rgx[parser.i+1]
+			prevChar := literals[len(literals)-1][0]
+			literals[len(literals)-1] = fmt.Sprintf("%c%c", prevChar, nextChar)
 			parser.i++
 		} else {
 			literals = append(literals, fmt.Sprintf("%c", c))
@@ -90,15 +90,15 @@ func parseCharSet(rgx string, parser *Parser) {
 	}
 	literalsSet := make(map[uint8]bool)
 	for _, lit := range literals {
-		if lit[0] > lit[len(lit) - 1] {
+		if lit[0] > lit[len(lit)-1] {
 			exit("Error: range start must be less that range end")
 		}
-		for c := lit[0]; c <= lit[len(lit) - 1]; c++ {
+		for c := lit[0]; c <= lit[len(lit)-1]; c++ {
 			literalsSet[c] = true
 		}
 	}
 
-	parser.tokens = append(parser.tokens, Token{ 
+	parser.tokens = append(parser.tokens, Token{
 		tokenType: CHAR_SET,
 		value:     literalsSet,
 	})
@@ -106,7 +106,7 @@ func parseCharSet(rgx string, parser *Parser) {
 
 func parseOr(rgx string, parser *Parser) {
 	rhsParser := &Parser{
-		i: parser.i,
+		i:      parser.i,
 		tokens: []Token{},
 	}
 	rhsParser.i += 1
@@ -116,17 +116,17 @@ func parseOr(rgx string, parser *Parser) {
 	}
 	left := Token{
 		tokenType: GROUP,
-		value: parser.tokens, 
+		value:     parser.tokens,
 	}
-	right := Token{ 
+	right := Token{
 		tokenType: GROUP,
-		value: rhsParser.tokens,
+		value:     rhsParser.tokens,
 	}
-	parser.tokens = []Token{{ 
+	parser.tokens = []Token{{
 		tokenType: OR,
-		value: []Token{left, right},
+		value:     []Token{left, right},
 	}}
-	parser.i = rhsParser.i 
+	parser.i = rhsParser.i
 }
 
 func parseRepeat(rgx string, parser *Parser) {
@@ -137,7 +137,7 @@ func parseRepeat(rgx string, parser *Parser) {
 		mn = 0
 	} else if c == '+' {
 		mx = INFINITY
-		mn = 1 
+		mn = 1
 	} else {
 		mx = 1
 		mn = 0
@@ -145,10 +145,10 @@ func parseRepeat(rgx string, parser *Parser) {
 	if len(parser.tokens) == 0 {
 		exit(fmt.Sprintf("Error: '%c' must has something before it", c))
 	}
-	lastToken := parser.tokens[len(parser.tokens) - 1]
-	parser.tokens[len(parser.tokens) - 1] = Token {
+	lastToken := parser.tokens[len(parser.tokens)-1]
+	parser.tokens[len(parser.tokens)-1] = Token{
 		tokenType: REPEAT,
-		value: RepeatData{ 
+		value: RepeatData{
 			token: lastToken,
 			min:   mn,
 			max:   mx,
@@ -211,10 +211,10 @@ func parseCustomRepeat(rgx string, parser *Parser) {
 	if len(parser.tokens) == 0 {
 		exit("Error: custom repeat must has something before it")
 	}
-	lastToken := parser.tokens[len(parser.tokens) - 1]
-	parser.tokens[len(parser.tokens) - 1] = Token {
+	lastToken := parser.tokens[len(parser.tokens)-1]
+	parser.tokens[len(parser.tokens)-1] = Token{
 		tokenType: REPEAT,
-		value: RepeatData{ 
+		value: RepeatData{
 			token: lastToken,
 			min:   mn,
 			max:   mx,
@@ -226,13 +226,13 @@ func process(rgx string, parser *Parser) {
 	c := rgx[parser.i]
 	if c == '(' {
 		groupParser := &Parser{
-			i: parser.i,
+			i:      parser.i,
 			tokens: []Token{},
 		}
 		parseGroup(rgx, groupParser)
 		token := Token{
 			tokenType: GROUP,
-			value: groupParser.tokens,
+			value:     groupParser.tokens,
 		}
 		parser.tokens = append(parser.tokens, token)
 		parser.i = groupParser.i
@@ -247,7 +247,7 @@ func process(rgx string, parser *Parser) {
 	} else {
 		token := Token{
 			tokenType: LITERAL,
-			value: c,
+			value:     c,
 		}
 		parser.tokens = append(parser.tokens, token)
 	}
@@ -255,7 +255,7 @@ func process(rgx string, parser *Parser) {
 
 func parse(rgx string) []Token {
 	parser := &Parser{
-		i: 0,
+		i:      0,
 		tokens: []Token{},
 	}
 
@@ -269,13 +269,15 @@ func parse(rgx string) []Token {
 
 func addTransition(a, b *State, symbol uint8) {
 	for i := range a.transitions {
-		if a.transitions[i].symbol != symbol { continue }
+		if a.transitions[i].symbol != symbol {
+			continue
+		}
 		a.transitions[i].states = append(a.transitions[i].states, b)
 		return
 	}
 
 	a.transitions = append(a.transitions,
-		Transition{ symbol: symbol, states: []*State{b}},
+		Transition{symbol: symbol, states: []*State{b}},
 	)
 }
 
@@ -292,8 +294,8 @@ func tokenToNFA(token *Token) (*State, *State) {
 		addTransition(start, end, token.value.(uint8))
 
 	case OR:
-		token1 := token.value.([]Token)[0] 
-		token2 := token.value.([]Token)[1] 
+		token1 := token.value.([]Token)[0]
+		token2 := token.value.([]Token)[1]
 		start1, end1 := tokenToNFA(&token1)
 		start2, end2 := tokenToNFA(&token2)
 		addTransition(start, start1, EPSILON)
@@ -319,7 +321,7 @@ func tokenToNFA(token *Token) (*State, *State) {
 		tok := token.value.(RepeatData).token
 		mn := token.value.(RepeatData).min
 		mx := token.value.(RepeatData).max
-		
+
 		if mn == 0 {
 			addTransition(start, end, EPSILON)
 		}
@@ -330,7 +332,7 @@ func tokenToNFA(token *Token) (*State, *State) {
 		} else if mn != 0 {
 			concatCount = mn
 		}
-		
+
 		s, e := tokenToNFA(&tok)
 		addTransition(start, s, EPSILON)
 
@@ -350,7 +352,6 @@ func tokenToNFA(token *Token) (*State, *State) {
 		if mx == INFINITY {
 			addTransition(end, s, EPSILON)
 		}
-		
 
 	default:
 		exit("Error: unknown token type")
@@ -383,7 +384,7 @@ func toNFA(tokens []Token) *State {
 func match(state *State, input string) bool {
 	type CacheKey struct {
 		state *State
-		i int
+		i     int
 	}
 
 	cache := make(map[CacheKey]bool)
@@ -413,16 +414,16 @@ func match(state *State, input string) bool {
 				}
 			}
 
-			cache[CacheKey{state, i}] = false 
+			cache[CacheKey{state, i}] = false
 			return false
 		}
 		var c uint8 = input[i]
 
 		for _, transition := range state.transitions {
 			switch transition.symbol {
-			case c:	
+			case c:
 				for _, nextState := range transition.states {
-					if matcher(nextState, input, i + 1) {
+					if matcher(nextState, input, i+1) {
 						cache[CacheKey{state, i}] = true
 						return true
 					}
@@ -437,7 +438,7 @@ func match(state *State, input string) bool {
 			}
 		}
 
-		cache[CacheKey{state, i}] = false 
+		cache[CacheKey{state, i}] = false
 		return false
 	}
 
@@ -447,5 +448,5 @@ func match(state *State, input string) bool {
 func main() {
 	tokens := parse(os.Args[1])
 	startState := toNFA(tokens)
-    fmt.Println(match(startState, os.Args[2]))
+	fmt.Println(match(startState, os.Args[2]))
 }
